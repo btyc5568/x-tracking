@@ -1,0 +1,31 @@
+{
+  "name": "x-tracker-server",
+  "version": "1.0.0",
+  "description": "X Account Tracking & Market Analysis System - Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "scraper": "node src/services/scraper/index.js",
+    "scraper:dev": "nodemon src/services/scraper/index.js",
+    "test": "jest --config=jest.config.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "ioredis": "^5.3.2",
+    "lru-cache": "^10.0.1",
+    "md5": "^2.3.0",
+    "mongoose": "^8.13.0",
+    "puppeteer": "^21.6.1",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "supertest": "^6.3.3"
+  }
+}
