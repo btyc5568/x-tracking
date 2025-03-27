@@ -1,0 +1,120 @@
+{
+  "proxies": [
+    {
+      "host": "8.219.176.202",
+      "port": 8080,
+      "protocol": "http",
+      "id": "8.219.176.202:8080",
+      "added": "2025-03-27T15:21:43.960Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.899Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "103.88.35.200",
+      "port": 83,
+      "protocol": "http",
+      "id": "103.88.35.200:83",
+      "added": "2025-03-27T15:21:48.993Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:37.066Z",
+      "lastError": "connect ECONNREFUSED 103.88.35.200:83"
+    },
+    {
+      "host": "43.153.171.39",
+      "port": 8080,
+      "protocol": "http",
+      "id": "43.153.171.39:8080",
+      "added": "2025-03-27T15:21:49.135Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.900Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "45.95.147.156",
+      "port": 3128,
+      "protocol": "http",
+      "id": "45.95.147.156:3128",
+      "added": "2025-03-27T15:21:54.141Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.901Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "203.17.127.176",
+      "port": 80,
+      "protocol": "http",
+      "id": "203.17.127.176:80",
+      "added": "2025-03-27T15:21:59.144Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.901Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "192.168.1.1",
+      "port": 8080,
+      "protocol": "http",
+      "isHealthy": true,
+      "lastUsed": 1743089050551,
+      "useCount": 0,
+      "id": "192.168.1.1:8080",
+      "added": "2025-03-27T15:25:10.551Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:36.908Z",
+      "lastError": "connect ECONNREFUSED 192.168.1.1:8080"
+    },
+    {
+      "host": "192.168.1.2",
+      "port": 8080,
+      "protocol": "http",
+      "isHealthy": true,
+      "lastUsed": 1743088990551,
+      "useCount": 0,
+      "id": "192.168.1.2:8080",
+      "added": "2025-03-27T15:25:10.552Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.901Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "192.168.1.3",
+      "port": 8080,
+      "protocol": "http",
+      "isHealthy": true,
+      "lastUsed": 1743088930551,
+      "useCount": 0,
+      "id": "192.168.1.3:8080",
+      "added": "2025-03-27T15:25:10.553Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.902Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "192.168.1.4",
+      "port": 8080,
+      "protocol": "http",
+      "isHealthy": true,
+      "lastUsed": 1743088870551,
+      "useCount": 0,
+      "id": "192.168.1.4:8080",
+      "added": "2025-03-27T15:25:10.554Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.902Z",
+      "lastError": "timeout of 5000ms exceeded"
+    },
+    {
+      "host": "192.168.1.5",
+      "port": 8080,
+      "protocol": "http",
+      "isHealthy": true,
+      "lastUsed": 1743088810551,
+      "useCount": 0,
+      "id": "192.168.1.5:8080",
+      "added": "2025-03-27T15:25:10.556Z",
+      "healthy": false,
+      "lastCheck": "2025-03-27T15:43:41.507Z",
+      "lastError": "connect ENETUNREACH 192.168.1.5:8080"
+    }
+  ],
+  "lastUpdated": "2025-03-27T15:43:41.902Z"
+}

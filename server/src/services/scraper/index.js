@@ -1,4 +1,10 @@
 const { ScraperOrchestrator } = require('./orchestrator');
+const { XScraper } = require('./x-scraper');
+const { AccountManager } = require('./account-manager');
+const { MetricsCollector } = require('./metrics-collector');
+const { AlertManager } = require('./alert-manager');
+const { PriorityScheduler } = require('./priority-scheduler');
+const { ProxyManager } = require('./proxy-manager');
 const { logger } = require('../../utils/logger');
 const scraperConfig = require('../../config/scraper.config');
 
@@ -44,4 +50,13 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main }; 
+module.exports = { 
+  main,
+  ScraperOrchestrator,
+  XScraper,
+  AccountManager,
+  MetricsCollector,
+  AlertManager,
+  PriorityScheduler,
+  ProxyManager
+}; 

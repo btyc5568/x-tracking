@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const { logger } = require('../../utils/logger');
 const path = require('path');
 const fs = require('fs').promises;
+const { ProxyManager } = require('./proxy-manager');
 
 /**
  * Scrapes X (Twitter) accounts for metrics
@@ -20,6 +21,8 @@ class XScraper {
       maxConcurrentBrowsers: config.maxConcurrentBrowsers || 2,
       screenshotPath: config.screenshotPath || path.join(process.cwd(), 'screenshots'),
       headless: config.headless !== false, // Default to headless
+      useProxies: config.useProxies !== false, // Default to using proxies
+      minProxies: config.minProxies || 20, // Minimum number of proxies
       ...config
     };
     
@@ -27,9 +30,19 @@ class XScraper {
     this.browsers = new Map();
     this.isInitialized = false;
     
+    // Initialize proxy manager if proxies are enabled
+    if (this.config.useProxies) {
+      this.proxyManager = config.proxyManager || new ProxyManager({
+        minProxies: this.config.minProxies,
+        proxyProviderUrls: config.proxyProviderUrls || [],
+        proxyProviderApiKeys: config.proxyProviderApiKeys || {}
+      });
+    }
+    
     this.log.info('X scraper created', { 
       baseUrl: this.config.baseUrl,
-      maxConcurrentBrowsers: this.config.maxConcurrentBrowsers
+      maxConcurrentBrowsers: this.config.maxConcurrentBrowsers,
+      useProxies: this.config.useProxies
     });
   }
   
@@ -40,6 +53,12 @@ class XScraper {
     try {
       // Create screenshot directory if it doesn't exist
       await fs.mkdir(this.config.screenshotPath, { recursive: true });
+      
+      // Initialize proxy manager if using proxies
+      if (this.config.useProxies && this.proxyManager) {
+        this.log.info('Initializing proxy manager');
+        await this.proxyManager.initialize();
+      }
       
       this.isInitialized = true;
       this.log.info('X scraper initialized successfully');
@@ -77,6 +96,11 @@ class XScraper {
         }
       }
       
+      // Stop proxy manager if using proxies
+      if (this.config.useProxies && this.proxyManager) {
+        await this.proxyManager.stop();
+      }
+      
       this.log.info('All browsers closed');
       return true;
     } catch (error) {
@@ -99,22 +123,70 @@ class XScraper {
         throw new Error('Maximum concurrent browser limit reached');
       }
       
-      // Launch new browser
+      // Launch new browser, with or without proxy
       const browserId = `browser_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      
       this.log.debug('Launching new browser', { browserId });
       
-      const browser = await puppeteer.launch({
-        headless: this.config.headless ? 'new' : false,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1280,1024'
-        ]
-      });
+      let browser;
+      let proxyDetails = null;
+      
+      if (this.config.useProxies && this.proxyManager) {
+        // Get a proxy from the proxy manager
+        await this.proxyManager.withProxy(async (proxy) => {
+          proxyDetails = proxy;
+          
+          const args = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1280,1024'
+          ];
+          
+          // Add proxy server argument
+          if (proxy) {
+            let proxyArg = `--proxy-server=${proxy.protocol || 'http'}://${proxy.host}:${proxy.port}`;
+            args.push(proxyArg);
+            
+            this.log.debug(`Using proxy ${proxy.host}:${proxy.port} for browser ${browserId}`);
+          }
+          
+          // Launch browser with proxy
+          browser = await puppeteer.launch({
+            headless: this.config.headless ? 'new' : false,
+            args
+          });
+          
+          // If proxy requires authentication, set it up
+          if (proxy && proxy.auth) {
+            browser.on('targetcreated', async (target) => {
+              if (target.type() === 'page') {
+                const page = await target.page();
+                if (page) {
+                  await page.authenticate({
+                    username: proxy.auth.username,
+                    password: proxy.auth.password
+                  });
+                }
+              }
+            });
+          }
+        });
+      } else {
+        // Launch browser without proxy
+        browser = await puppeteer.launch({
+          headless: this.config.headless ? 'new' : false,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1280,1024'
+          ]
+        });
+      }
       
       // Store browser
       this.browsers.set(browserId, browser);
@@ -127,10 +199,11 @@ class XScraper {
       
       this.log.info('Browser launched', {
         browserId,
-        currentBrowsers: this.browsers.size
+        currentBrowsers: this.browsers.size,
+        usingProxy: !!proxyDetails
       });
       
-      return { browser, browserId };
+      return { browser, browserId, proxyDetails };
     } catch (error) {
       this.log.error('Error launching browser', { error });
       throw error;
@@ -151,27 +224,48 @@ class XScraper {
     
     let browser;
     let browserId;
+    let proxyDetails;
     let page;
     
     try {
       this.log.info(`Scraping account: ${account.username}`);
       
-      // Get browser instance
-      ({ browser, browserId } = await this.getBrowser());
+      // Get browser instance with proxy if enabled
+      ({ browser, browserId, proxyDetails } = await this.getBrowser());
       
       // Create page
       page = await browser.newPage();
       
-      // Set user agent to avoid detection
-      await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      );
+      // If using authenticated proxy, set up authentication
+      if (proxyDetails && proxyDetails.auth) {
+        await page.authenticate({
+          username: proxyDetails.auth.username,
+          password: proxyDetails.auth.password
+        });
+      }
       
-      // Set viewport size
-      await page.setViewport({ width: 1280, height: 1024 });
+      // Randomize user agent to avoid detection
+      const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:89.0) Gecko/20100101 Firefox/89.0'
+      ];
+      
+      const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+      await page.setUserAgent(randomUserAgent);
+      
+      // Set viewport size with slight randomization to look more human-like
+      const width = 1280 + Math.floor(Math.random() * 100);
+      const height = 1024 + Math.floor(Math.random() * 100);
+      await page.setViewport({ width, height });
       
       // Set navigation timeout
       page.setDefaultNavigationTimeout(this.config.navigationTimeout);
+      
+      // Add a fingerprint
+      await this.addBrowserFingerprint(page);
       
       // Go to profile page
       const profileUrl = `${this.config.baseUrl}/${account.username}`;
@@ -193,7 +287,8 @@ class XScraper {
         
         return {
           success: false,
-          error
+          error,
+          usingProxy: !!proxyDetails
         };
       }
       
@@ -580,6 +675,55 @@ class XScraper {
    */
   get browsersRunning() {
     return this.browsers.size;
+  }
+  
+  /**
+   * Add a browser fingerprint to make the browser look more human-like
+   */
+  async addBrowserFingerprint(page) {
+    // Override the navigator properties
+    await page.evaluateOnNewDocument(() => {
+      // Overwrite the plugins property to use a custom getter
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          // Generate random number of plugins between 3 and 8
+          const numPlugins = Math.floor(Math.random() * 6) + 3;
+          const plugins = [];
+          
+          for (let i = 0; i < numPlugins; i++) {
+            plugins.push({
+              name: `Plugin ${i + 1}`,
+              description: `Description for Plugin ${i + 1}`,
+              filename: `plugin${i + 1}.dll`
+            });
+          }
+          
+          return plugins;
+        }
+      });
+      
+      // Override navigator properties
+      Object.defineProperty(navigator, 'platform', {
+        get: () => {
+          const platforms = ['Win32', 'MacIntel', 'Linux x86_64'];
+          return platforms[Math.floor(Math.random() * platforms.length)];
+        }
+      });
+      
+      // Override webdriver property to avoid detection
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false
+      });
+      
+      // Add randomized properties to navigator
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => Math.floor(Math.random() * 8) + 2
+      });
+      
+      Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => Math.pow(2, Math.floor(Math.random() * 4) + 1)
+      });
+    });
   }
 }
 

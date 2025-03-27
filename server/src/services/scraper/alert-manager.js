@@ -14,29 +14,33 @@ class AlertManager {
     this.triggeredAlerts = [];
     this.storage = config.storageType || 'memory';
     this.initialized = false;
+    this.metricsCollector = null;
     
     this.log.info('Alert manager initialized', { storageType: this.storage });
   }
 
   /**
-   * Initialize the alert storage
+   * Initialize the alert manager and set up event listeners
    */
-  async initialize() {
+  async initialize(metricsCollector) {
     if (this.initialized) {
       this.log.warn('Alert manager already initialized');
       return;
     }
 
     try {
-      // In a real implementation, this would connect to the database
-      // or load from a file, etc.
+      this.log.info('Initializing alert manager');
       
-      this.alerts = {}; // Reset alerts
-      this.triggeredAlerts = []; // Reset triggered alerts
-      
-      // Add some test alerts if in memory mode and no alerts exist
-      if (this.storage === 'memory') {
-        await this.addTestAlerts();
+      // Store reference to metrics collector if provided
+      if (metricsCollector) {
+        this.metricsCollector = metricsCollector;
+        
+        // Set up event listeners for significant changes
+        this.metricsCollector.on('significantChange', (data) => {
+          this.handleSignificantChange(data);
+        });
+        
+        this.log.info('Set up event listeners for metrics collector');
       }
       
       this.initialized = true;
@@ -45,6 +49,91 @@ class AlertManager {
     } catch (error) {
       this.log.error('Failed to initialize alert manager', { error });
       throw error;
+    }
+  }
+  
+  /**
+   * Handle a significant change event from the metrics collector
+   */
+  async handleSignificantChange(changeData) {
+    if (!changeData || !changeData.accountId) {
+      this.log.warn('Invalid change data received');
+      return;
+    }
+    
+    this.log.info('Processing significant change', { 
+      accountId: changeData.accountId,
+      timestamp: changeData.timestamp 
+    });
+    
+    try {
+      // Generate alert
+      const alert = await this.createAlert({
+        accountId: changeData.accountId,
+        type: 'significant_change',
+        severity: this.calculateSeverity(changeData.changes),
+        timestamp: changeData.timestamp,
+        data: changeData.changes
+      });
+      
+      // Process alert (notification, etc.)
+      await this.processAlert(alert);
+      
+      return alert;
+    } catch (error) {
+      this.log.error('Error handling significant change', { 
+        error: error.message,
+        accountId: changeData.accountId 
+      });
+    }
+  }
+  
+  /**
+   * Calculate alert severity based on the magnitude of changes
+   */
+  calculateSeverity(changes) {
+    if (!changes || !changes.metrics) {
+      return 'low';
+    }
+    
+    // Count significant metrics
+    let significantCount = 0;
+    let hasHighChange = false;
+    
+    // Check top-level metrics
+    for (const metricKey of ['followers', 'following', 'tweets']) {
+      if (changes.metrics[metricKey] && changes.metrics[metricKey].isSignificant) {
+        significantCount++;
+        
+        // Check for high changes (over 20%)
+        if (Math.abs(changes.metrics[metricKey].percentChange) > 20) {
+          hasHighChange = true;
+        }
+      }
+    }
+    
+    // Check engagement metrics
+    if (changes.metrics.engagement) {
+      for (const engKey of Object.keys(changes.metrics.engagement)) {
+        if (changes.metrics.engagement[engKey] && 
+            changes.metrics.engagement[engKey].isSignificant) {
+          significantCount++;
+          
+          // Check for high changes (over 50%)
+          if (Math.abs(changes.metrics.engagement[engKey].percentChange) > 50) {
+            hasHighChange = true;
+          }
+        }
+      }
+    }
+    
+    // Determine severity
+    if (hasHighChange || significantCount >= 3) {
+      return 'high';
+    } else if (significantCount >= 2) {
+      return 'medium';
+    } else {
+      return 'low';
     }
   }
   

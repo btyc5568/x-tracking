@@ -5,6 +5,7 @@ const { MetricsCollector } = require('./metrics-collector');
 const { AlertManager } = require('./alert-manager');
 const { PriorityScheduler } = require('./priority-scheduler');
 const { XScraper } = require('./x-scraper');
+const { ProxyManager } = require('./proxy-manager');
 
 /**
  * Orchestrates the X account scraping system
@@ -21,6 +22,9 @@ class ScraperOrchestrator {
       maxConcurrentWorkers: parseInt(process.env.MAX_CONCURRENT_WORKERS || '2', 10),
       maxBrowsers: parseInt(process.env.MAX_BROWSERS || '2', 10),
       alertsEnabled: process.env.ALERTS_ENABLED !== 'false',
+      useProxies: process.env.USE_PROXIES !== 'false',
+      minProxies: parseInt(process.env.MIN_PROXIES || '20', 10),
+      proxyProviderUrls: process.env.PROXY_PROVIDER_URLS ? process.env.PROXY_PROVIDER_URLS.split(',') : [],
       ...config
     };
     
@@ -37,10 +41,21 @@ class ScraperOrchestrator {
       storageType: process.env.ALERTS_STORAGE_TYPE || 'memory'
     });
     
+    // Initialize proxy manager if enabled
+    if (this.config.useProxies) {
+      this.proxyManager = new ProxyManager({
+        minProxies: this.config.minProxies,
+        proxyProviderUrls: this.config.proxyProviderUrls,
+        proxyProviderApiKeys: config.proxyProviderApiKeys || {}
+      });
+    }
+    
     this.scraper = new XScraper({
       maxConcurrentBrowsers: this.config.maxBrowsers,
       navigationTimeout: 30000, // 30 seconds
-      baseUrl: 'https://twitter.com'
+      baseUrl: 'https://twitter.com',
+      useProxies: this.config.useProxies,
+      proxyManager: this.proxyManager
     });
     
     this.scheduler = new PriorityScheduler({
@@ -54,7 +69,9 @@ class ScraperOrchestrator {
     this.log.info('Scraper orchestrator created', { 
       maxConcurrentWorkers: this.config.maxConcurrentWorkers,
       maxBrowsers: this.config.maxBrowsers,
-      alertsEnabled: this.config.alertsEnabled
+      alertsEnabled: this.config.alertsEnabled,
+      useProxies: this.config.useProxies,
+      minProxies: this.config.minProxies
     });
   }
   
@@ -82,6 +99,12 @@ class ScraperOrchestrator {
       if (this.config.alertsEnabled) {
         await this.alertManager.initialize();
         this.log.info('Alert manager initialized');
+      }
+      
+      // Initialize proxy manager if enabled
+      if (this.config.useProxies && this.proxyManager) {
+        await this.proxyManager.initialize();
+        this.log.info('Proxy manager initialized');
       }
       
       // Initialize scraper
@@ -169,6 +192,7 @@ class ScraperOrchestrator {
    */
   getStatus() {
     const schedulerStatus = this.scheduler.getStatus();
+    const proxyStatus = this.config.useProxies && this.proxyManager ? this.proxyManager.getStatus() : null;
     
     return {
       isInitialized: this.isInitialized,
@@ -179,6 +203,7 @@ class ScraperOrchestrator {
         browsersRunning: this.scraper ? this.scraper.browsersRunning : 0,
         maxBrowsers: this.config.maxBrowsers
       },
+      proxies: proxyStatus,
       lastUpdated: new Date().toISOString()
     };
   }

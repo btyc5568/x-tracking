@@ -293,51 +293,96 @@ class PriorityScheduler {
   }
   
   /**
-   * Scrape an account and process results
+   * Scrape an account
    */
   async scrapeAccount(account) {
+    if (!account || !account.id) {
+      this.log.error('Invalid account object for scraping');
+      return false;
+    }
+    
+    if (!this.scraper || !this.metricsCollector) {
+      this.log.error('Scraper or metrics collector not available');
+      return false;
+    }
+    
+    const start = Date.now();
+    
     try {
-      this.log.info(`Scraping account ${account.username} (${account.id})`);
+      this.log.info(`Starting to scrape account: ${account.username} (${account.id})`);
       
-      // Scrape the account
-      const result = await this.scraper.scrapeAccount(account);
+      // Scrape profile data
+      const scrapeResult = await this.scraper.scrapeUserProfile(account.username);
       
-      if (!result.success) {
-        this.log.error('Scrape failed', { 
-          accountId: account.id, 
-          error: result.error 
-        });
-        
-        // Update account with error info
-        await this.accountManager.updateLastScraped(account.id, false, result.error);
-        
-        return { success: false, error: result.error };
+      if (!scrapeResult || !scrapeResult.success) {
+        throw new Error(scrapeResult?.error || 'Unknown scraping error');
       }
       
-      // Scrape successful
-      this.log.info('Scrape successful', { 
-        accountId: account.id, 
-        metricsCollected: Object.keys(result.metrics).length 
+      // Get profile metrics from the scraped data
+      const metrics = {
+        followers: scrapeResult.data.followers,
+        following: scrapeResult.data.following,
+        tweets: scrapeResult.data.tweets,
+        engagement: {
+          avgLikes: scrapeResult.data.avgLikes || 0,
+          avgRetweets: scrapeResult.data.avgRetweets || 0,
+          avgReplies: scrapeResult.data.avgReplies || 0,
+          avgViews: scrapeResult.data.avgViews || 0
+        },
+        profileUrl: scrapeResult.data.profileUrl,
+        verified: scrapeResult.data.verified,
+        protected: scrapeResult.data.protected,
+        lastTweetDate: scrapeResult.data.lastTweetDate
+      };
+      
+      // Save metrics to the database
+      const metricsResult = await this.metricsCollector.saveMetrics(account.id, metrics);
+      
+      // Update account info
+      await this.accountManager.updateAccount(account.id, {
+        name: scrapeResult.data.displayName,
+        profileImageUrl: scrapeResult.data.profileImageUrl,
+        bio: scrapeResult.data.bio,
+        lastScraped: new Date().toISOString()
       });
       
-      // Save metrics
-      await this.metricsCollector.saveMetrics(account.id, result.metrics);
-      
-      // Update account's lastScraped timestamp
+      // Report success
       await this.accountManager.updateLastScraped(account.id, true);
       
-      return { success: true, metrics: result.metrics };
+      const duration = Date.now() - start;
+      
+      this.log.info(`Completed scraping ${account.username} in ${duration}ms`, {
+        accountId: account.id,
+        metricsId: metricsResult.id,
+        duration
+      });
+      
+      return {
+        success: true,
+        accountId: account.id,
+        metricsId: metricsResult.id,
+        duration,
+        metrics
+      };
     } catch (error) {
-      this.log.error('Error in scrapeAccount', { error, accountId: account.id });
+      const duration = Date.now() - start;
       
-      // Update account with error info
-      await this.accountManager.updateLastScraped(
-        account.id, 
-        false, 
-        error.message || 'Unknown error'
-      );
+      this.log.error(`Error scraping account ${account.username}`, {
+        accountId: account.id,
+        error: error.message,
+        stack: error.stack,
+        duration
+      });
       
-      return { success: false, error: error.message || 'Unknown error' };
+      // Report failure
+      await this.accountManager.updateLastScraped(account.id, false, error.message);
+      
+      return {
+        success: false,
+        accountId: account.id,
+        error: error.message,
+        duration
+      };
     }
   }
   

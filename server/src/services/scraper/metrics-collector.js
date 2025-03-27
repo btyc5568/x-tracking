@@ -1,15 +1,17 @@
 const { logger } = require('../../utils/logger');
 const Metric = require('../../models/Metric');
 const Account = require('../../models/Account');
+const { EventEmitter } = require('events');
 
 /**
  * Collects and stores metrics from X account scraping
  */
-class MetricsCollector {
+class MetricsCollector extends EventEmitter {
   /**
    * Initialize the metrics collector
    */
   constructor(config = {}) {
+    super(); // Initialize EventEmitter
     this.log = logger.child({ module: 'MetricsCollector' });
     this.metrics = {};
     this.storage = config.storageType || 'mongodb';
@@ -130,11 +132,17 @@ class MetricsCollector {
       
       // Create the metrics entry
       let metricsEntry;
+      let previousMetrics = null;
       
       if (this.storage === 'memory') {
         // Initialize account metrics object if it doesn't exist
         if (!this.metrics[accountId]) {
           this.metrics[accountId] = [];
+        }
+        
+        // Get previous metrics for change detection
+        if (this.metrics[accountId].length > 0) {
+          previousMetrics = this.metrics[accountId][0].metrics;
         }
         
         // Create the metrics entry for memory storage
@@ -154,8 +162,6 @@ class MetricsCollector {
         );
       } else {
         // Find the latest metrics for this account to calculate growth
-        let previousMetrics = null;
-        
         if (this.storage === 'mongodb') {
           previousMetrics = await Metric.findOne({ accountId })
             .sort({ timestamp: -1 })
@@ -198,32 +204,38 @@ class MetricsCollector {
           }
         });
         
-        // Save to MongoDB
-        await metricDoc.save();
-        
-        // Format the response
-        metricsEntry = {
-          id: metricDoc._id.toString(),
-          accountId,
-          timestamp: metricDoc.timestamp.toISOString(),
-          metrics: {
-            followers: metricDoc.followers,
-            following: metricDoc.following,
-            tweets: metricDoc.tweets,
-            engagement: metricDoc.engagement
-          }
-        };
+        // Save to database
+        try {
+          metricsEntry = await metricDoc.save();
+          this.log.debug('Saved metrics to MongoDB', { accountId, timestamp: timestampStr });
+        } catch (saveError) {
+          this.log.error('Error saving metrics to MongoDB', { accountId, error: saveError.message });
+          throw saveError;
+        }
       }
       
-      this.log.info('Metrics saved', { 
+      // Detect significant changes
+      const changes = await this.detectSignificantChanges(
         accountId, 
-        timestamp: timestampStr,
-        storage: this.storage
-      });
+        metricsData, 
+        previousMetrics ? (previousMetrics.metrics || previousMetrics) : null
+      );
+      
+      // If significant changes detected, trigger alerts
+      if (changes.hasSignificantChanges) {
+        // Emit change event (can be picked up by alert manager or other services)
+        this.emit('significantChange', {
+          accountId,
+          timestamp: timestampStr,
+          changes
+        });
+      }
+      
+      this.log.info('Metrics saved successfully', { accountId, timestamp: timestampStr });
       
       return metricsEntry;
     } catch (error) {
-      this.log.error('Error saving metrics', { error, accountId });
+      this.log.error('Error saving metrics', { accountId, error: error.message, stack: error.stack });
       throw error;
     }
   }
@@ -853,6 +865,172 @@ class MetricsCollector {
     });
     
     return result;
+  }
+
+  /**
+   * Detect significant changes in metrics
+   * @param {string} accountId - Account ID
+   * @param {Object} currentMetrics - Current metrics data
+   * @param {Object} previousMetrics - Previous metrics data
+   * @returns {Object} Changes detected
+   */
+  async detectSignificantChanges(accountId, currentMetrics, previousMetrics) {
+    if (!accountId || !currentMetrics) {
+      this.log.warn('Invalid input for detecting changes', { accountId });
+      return { hasSignificantChanges: false };
+    }
+
+    // If no previous metrics, can't detect changes
+    if (!previousMetrics) {
+      this.log.debug('No previous metrics to compare with', { accountId });
+      return { hasSignificantChanges: false, isFirstMetric: true };
+    }
+
+    try {
+      // Define thresholds for significant changes
+      const thresholds = {
+        followers: {
+          percentChange: 5,        // 5% change in followers
+          absoluteChange: 1000     // or 1000 absolute change
+        },
+        following: {
+          percentChange: 10,       // 10% change in following
+          absoluteChange: 100      // or 100 absolute change
+        },
+        tweets: {
+          percentChange: 5,        // 5% change in tweet count
+          absoluteChange: 20       // or 20 new tweets
+        },
+        engagement: {
+          avgLikes: {
+            percentChange: 20,     // 20% change in avg likes
+            absoluteChange: 500    // or 500 absolute change
+          },
+          avgRetweets: {
+            percentChange: 20,     // 20% change in avg retweets
+            absoluteChange: 100    // or 100 absolute change
+          },
+          avgReplies: {
+            percentChange: 20,     // 20% change in avg replies
+            absoluteChange: 100    // or 100 absolute change
+          },
+          avgViews: {
+            percentChange: 20,     // 20% change in avg views
+            absoluteChange: 1000   // or 1000 absolute change
+          }
+        }
+      };
+
+      // Calculate changes
+      const changes = {
+        hasSignificantChanges: false,
+        metrics: {},
+        timestamp: new Date().toISOString()
+      };
+
+      // Check top-level metrics
+      ['followers', 'following', 'tweets'].forEach(metricKey => {
+        if (currentMetrics[metricKey] !== undefined && previousMetrics[metricKey] !== undefined) {
+          const currentValue = currentMetrics[metricKey];
+          const previousValue = previousMetrics[metricKey];
+          
+          const absoluteChange = currentValue - previousValue;
+          const percentChange = previousValue !== 0 
+            ? (absoluteChange / previousValue) * 100 
+            : 0;
+          
+          const isSignificant = 
+            Math.abs(percentChange) >= thresholds[metricKey].percentChange || 
+            Math.abs(absoluteChange) >= thresholds[metricKey].absoluteChange;
+          
+          changes.metrics[metricKey] = {
+            previous: previousValue,
+            current: currentValue,
+            absoluteChange,
+            percentChange,
+            isSignificant
+          };
+          
+          if (isSignificant) {
+            changes.hasSignificantChanges = true;
+          }
+        }
+      });
+
+      // Check engagement metrics
+      if (currentMetrics.engagement && previousMetrics.engagement) {
+        changes.metrics.engagement = {};
+        
+        Object.keys(thresholds.engagement).forEach(engagementKey => {
+          if (currentMetrics.engagement[engagementKey] !== undefined && 
+              previousMetrics.engagement[engagementKey] !== undefined) {
+            
+            const currentValue = currentMetrics.engagement[engagementKey];
+            const previousValue = previousMetrics.engagement[engagementKey];
+            
+            const absoluteChange = currentValue - previousValue;
+            const percentChange = previousValue !== 0 
+              ? (absoluteChange / previousValue) * 100 
+              : 0;
+            
+            const isSignificant = 
+              Math.abs(percentChange) >= thresholds.engagement[engagementKey].percentChange || 
+              Math.abs(absoluteChange) >= thresholds.engagement[engagementKey].absoluteChange;
+            
+            changes.metrics.engagement[engagementKey] = {
+              previous: previousValue,
+              current: currentValue,
+              absoluteChange,
+              percentChange,
+              isSignificant
+            };
+            
+            if (isSignificant) {
+              changes.hasSignificantChanges = true;
+            }
+          }
+        });
+      }
+
+      // Log significant changes
+      if (changes.hasSignificantChanges) {
+        this.log.info('Significant changes detected for account', { 
+          accountId, 
+          changes: JSON.stringify(changes) 
+        });
+        
+        // If using MongoDB, log the changes in a structured way
+        if (this.storage === 'mongodb' && Account) {
+          try {
+            await Account.findOneAndUpdate(
+              { id: accountId },
+              {
+                $push: {
+                  significantChanges: {
+                    timestamp: new Date(),
+                    changes: changes.metrics
+                  }
+                }
+              }
+            );
+          } catch (error) {
+            this.log.error('Error saving significant changes to account document', { 
+              accountId, 
+              error: error.message 
+            });
+          }
+        }
+      }
+
+      return changes;
+    } catch (error) {
+      this.log.error('Error detecting significant changes', { 
+        accountId, 
+        error: error.message,
+        stack: error.stack 
+      });
+      return { hasSignificantChanges: false, error: error.message };
+    }
   }
 }
 
