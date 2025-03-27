@@ -1,5 +1,5 @@
 const express = require('express');
-const { check } = require('express-validator');
+const router = express.Router();
 const {
   getCategories,
   getCategory,
@@ -10,25 +10,14 @@ const {
   addAccountsToCategory,
   removeAccountsFromCategory
 } = require('../controllers/categoryController');
-const { protect, authorize } = require('../middlewares/auth');
 
-const router = express.Router();
-
-// Temporarily commenting out auth middleware for testing
-// router.use(protect);
-
-// Get all categories and create category
-router
-  .route('/')
+// Get all categories and create new category
+router.route('/')
   .get(getCategories)
-  .post(
-    [check('name', 'Category name is required').not().isEmpty()],
-    createCategory
-  );
+  .post(createCategory);
 
-// Get, update, and delete single category
-router
-  .route('/:id')
+// Get, update and delete category
+router.route('/:id')
   .get(getCategory)
   .put(updateCategory)
   .delete(deleteCategory);

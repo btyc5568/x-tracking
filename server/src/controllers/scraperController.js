@@ -1,10 +1,10 @@
 const Account = require('../models/Account');
 const Post = require('../models/Post');
 const scraper = require('../services/scraper');
-const { NLP } = require('node-nlp');
+const { SentimentAnalyzer } = require('node-nlp');
 const logger = require('../utils/logger');
 
-const nlp = new NLP();
+const nlp = new SentimentAnalyzer({ language: 'en' });
 
 /**
  * @desc    Scrape a single account

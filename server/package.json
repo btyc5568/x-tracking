@@ -29,6 +29,7 @@
     "lru-cache": "^10.0.1",
     "md5": "^2.3.0",
     "mongoose": "^8.13.0",
+    "node-nlp": "^5.0.0-alpha.5",
     "p-queue": "^7.4.1",
     "pg": "^8.14.1",
     "proxy-agent": "^6.5.0",

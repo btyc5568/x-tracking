@@ -2,8 +2,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
-const { connectMongoDB, connectPostgres } = require('./config/database');
-const logger = require('./utils/logger');
+const connectDB = require('./config/database');
+const { logger } = require('./utils/logger');
+const seedDefaultCategories = require('./utils/seedCategories');
 
 // Load environment variables
 dotenv.config();
@@ -11,29 +12,20 @@ dotenv.config();
 // Initialize express
 const app = express();
 
-// Connect to databases
-connectMongoDB();
-connectPostgres();
-
-// Middleware
-app.use(helmet());
-app.use(cors({
-  origin: ['http://localhost:3001', 'http://localhost:3000'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Welcome route
-app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to X Tracking API' });
+// Connect to database
+connectDB().then(() => {
+  // Seed default categories after DB connection
+  seedDefaultCategories();
 });
 
-// Import routes
-app.use('/api/accounts', require('./routes/accounts'));
+// Middleware
+app.use(express.json());
+app.use(cors());
+app.use(helmet());
+
+// Routes
 app.use('/api/categories', require('./routes/categories'));
+app.use('/api/accounts', require('./routes/accounts'));
 // app.use('/api/reports', require('./routes/reports'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/scraper', require('./routes/scraper'));
