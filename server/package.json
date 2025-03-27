@@ -11,6 +11,11 @@
     "test": "jest --config=jest.config.js",
     "test:proxy": "node test-proxy-rotation.js",
     "test:monitor": "node test-monitor-pipeline.js",
+    "test:browser": "node test-browser-manager.js",
+    "test:priority": "node test-priority-scheduler.js",
+    "test:integration": "node test-scraper-integration.js",
+    "test:all": "node run-all-tests.js",
+    "test:load": "node test-load-5000-accounts.js",
     "lint": "eslint ."
   },
   "keywords": [],

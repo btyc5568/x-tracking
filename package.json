@@ -14,7 +14,10 @@
     "test:with-server": "npm start & sleep 5 && npm test && kill $!",
     "test:performance:with-server": "npm start & sleep 5 && npm run test:performance && kill $!",
     "test:all": "npx jest --config=jest.config.js",
-    "test:node": "npx jest --config=jest.node.config.js"
+    "test:node": "npx jest --config=jest.node.config.js",
+    "test:load": "node ./server/run-load-test.js",
+    "test:load:quick": "TEST_QUICK_MODE=true TEST_DURATION_SECONDS=30 node ./server/run-load-test.js",
+    "test:all": "node ./server/run-all-tests.js"
   },
   "dependencies": {
     "@jest/globals": "^29.7.0",
@@ -27,13 +30,14 @@
     "puppeteer": "^24.4.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "uuid": "^11.1.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",
+    "@babel/plugin-syntax-jsx": "^7.23.0",
     "@babel/preset-env": "^7.23.0",
     "@babel/preset-react": "^7.23.0",
-    "@babel/plugin-syntax-jsx": "^7.23.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^14.2.0",
     "babel-jest": "^29.7.0",
